@@ -1,0 +1,107 @@
+<header class="header">
+  <div class="logo">AItency<span>Demo</span></div>
+  <nav class="nav">
+    <a href="#chat-demo">Conversation</a>
+    <a href="#system-activity">System Flow</a>
+    <a href="#scenarios">Scenarios</a>
+  </nav>
+</header>
+
+<main class="main">
+  <section class="hero">
+    <div class="hero-text">
+      <h1>
+        AI Booking & Automation Demo<br />
+        <span>for i-Dentity Dental Clinic</span>
+      </h1>
+
+      <p>
+        This interactive demo simulates how an AI Booking Agent handles patient bookings,
+        recall reminders, and call automation.
+      </p>
+
+      <div class="hero-actions">
+        <button class="btn primary" (click)="runBooking()">Run Booking Scenario</button>
+        <button class="btn secondary" (click)="runRecall()">Run Recall Scenario</button>
+        <button class="btn ghost" (click)="runCall()">Run Call Handling Scenario</button>
+      </div>
+
+      <button class="btn ghost small" (click)="pause()">Pause</button>
+    </div>
+
+    <div class="hero-visual">
+      <div class="integration-map">
+        <div class="node node-ai">
+          <span>AI Booking Agent</span>
+        </div>
+        <div class="node node-filemaker">
+          <span>Filemaker 19</span>
+        </div>
+        <div class="node node-calendar">
+          <span>Google Calendar</span>
+        </div>
+        <div class="node node-doctor">
+          <span>Doctor Anytime</span>
+        </div>
+        <div class="node node-channels">
+          <span>Phone / WhatsApp / SMS</span>
+        </div>
+        <svg class="integration-lines" viewBox="0 0 300 200" preserveAspectRatio="none">
+          <line x1="150" y1="40" x2="60" y2="110" />
+          <line x1="150" y1="40" x2="240" y2="110" />
+          <line x1="150" y1="40" x2="150" y2="180" />
+          <line x1="150" y1="40" x2="60" y2="180" />
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="chat-demo" class="panel panel-grid">
+    <div class="panel-column">
+      <h2>Patient ↔ AI Conversation</h2>
+
+      <div class="chat-window">
+        <app-voice-assistaint></app-voice-assistaint>
+<!--        @for (msg of chatMessages; track msg) {-->
+<!--          <div-->
+<!--            class="chat-message"-->
+<!--            [class.ai]="msg.author === 'ai'"-->
+<!--          >-->
+<!--            {{ msg.text }}-->
+<!--          </div>-->
+<!--        }-->
+      </div>
+
+      <div class="chat-controls">
+        <button class="btn small" (click)="newBookingMessage()">New Booking</button>
+        <button class="btn small" (click)="newRecallMessage()">Recall Reminder</button>
+        <button class="btn small ghost" (click)="resetChat()">Reset</button>
+      </div>
+    </div>
+
+    <!-- SYSTEM ACTIVITY -->
+    <div id="system-activity" class="panel-column">
+      <h2>System Activity Monitor</h2>
+
+      <div class="systems-grid">
+        @for (system of systems; track system.title) {
+          <div
+            class="system-card"
+            [class.active]="system.active"
+          >
+            <h3>{{ system.title }}</h3>
+            <p>{{ system.description }}</p>
+            <span class="status">
+            {{ system.active ? 'Active' : 'Idle' }}
+          </span>
+          </div>
+        }
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>© {{ currentYear }} AItency – AI Business Automation Demo.</p>
+</footer>
