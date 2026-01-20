@@ -13,18 +13,21 @@ export class AssistantService {
       key: 'calendar',
       description: 'Appointment scheduling',
       active: false,
+      status: 'Idle ...',
     },
     {
       title: 'Doctor Anytime',
       description: 'Online booking platform syncing appointments.',
       key: 'booking',
       active: false,
+      status: 'Idle ...',
     },
     {
       title: 'Data base',
       description: 'provides data for your needs.',
       key: '',
       active: false,
+      status: 'Idle ...',
     },
   ];
 
@@ -37,4 +40,5 @@ export class AssistantService {
       this.systems[bookingIndex].active = this.bookingProcessing();
     });
   }
+
 }

@@ -18,31 +18,19 @@ export class VoiceAssistaint {
   @ViewChild('player', { static: true }) player!: ElementRef<HTMLAudioElement>;
   private assistantService = inject(AssistantService);
 
-  // =========================
-  // UI state
-  // =========================
   showEmptyState = true;
   isRecording = false;
   messages: ChatMessage[] = [];
 
-  // =========================
-  // WS config
-  // =========================
   private readonly REMOTE_WS_URL = 'wss://voice-116.aitency.net/realtime';
   private readonly LOCAL_WS_URL = 'ws://localhost:3000/realtime';
   private ws!: WebSocket;
 
-  // =========================
-  // Audio input
-  // =========================
   private audioContext: AudioContext | null = null;
   private audioSource: MediaStreamAudioSourceNode | null = null;
   private audioProcessor: ScriptProcessorNode | null = null;
   private micStream: MediaStream | null = null;
 
-  // =========================
-  // Playback
-  // =========================
   private playbackContext: AudioContext | null = null;
   private audioQueue: ArrayBuffer[] = [];
   private isPlaying = false;
@@ -51,15 +39,9 @@ export class VoiceAssistaint {
   private playbackStartTime = 0;
   private lastResponseItemId: string | null = null;
 
-  // =========================
-  // Session
-  // =========================
   private sessionId!: string;
   private streamingServerUrl!: string;
 
-  // =========================
-  // Lifecycle
-  // =========================
   ngOnInit(): void {
     this.sessionId = this.resolveSessionId();
     this.streamingServerUrl = this.resolveWsUrl();
@@ -72,9 +54,6 @@ export class VoiceAssistaint {
     this.ws?.close();
   }
 
-  // =========================
-  // WS URL resolve
-  // =========================
   private resolveWsUrl(): string {
     const params = new URLSearchParams(window.location.search);
     const urlOverride = params.get('ws');
@@ -99,17 +78,11 @@ export class VoiceAssistaint {
     return id;
   }
 
-  // =========================
-  // UI helpers
-  // =========================
   private addMessage(text: string, who: MessageWho): void {
     this.showEmptyState = false;
     this.messages.push({ text, who });
   }
 
-  // =========================
-  // Recording toggle
-  // =========================
   async toggleRecording(): Promise<void> {
     this.ensureWebSocket();
     this.initPlaybackContext();
@@ -163,14 +136,16 @@ export class VoiceAssistaint {
     this.micStream?.getTracks().forEach(t => t.stop());
   }
 
-  // =========================
-  // WebSocket
-  // =========================
   private ensureWebSocket(): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
     this.ws = new WebSocket(this.streamingServerUrl);
     this.ws.binaryType = 'arraybuffer';
+
+    // Накопление текущего ответа ассистента
+    let currentAssistantDelta = '';
+    // Флаг, чтобы знать, создавали ли мы уже сообщение для текущего ответа
+    let currentAssistantMessageIndex: number | null = null;
 
     this.ws.onmessage = e => {
       if (e.data instanceof ArrayBuffer) {
@@ -180,11 +155,40 @@ export class VoiceAssistaint {
 
       try {
         const msg = JSON.parse(e.data);
+
+        if (msg.type === 'agent.step') {
+          const systemIndex = this.assistantService.systems.findIndex(system => system.key === msg.key);
+          this.assistantService.systems[systemIndex] = {
+            ...this.assistantService.systems[systemIndex],
+            active: true,
+            status: msg.step,
+          }
+        }
+
+        if (msg.type === 'response.audio_transcript.delta') {
+          this.showEmptyState = false;
+          currentAssistantDelta += msg.delta;
+
+          if (currentAssistantMessageIndex === null) {
+            // создаём новое сообщение ассистента и сохраняем индекс
+            this.messages.push({ text: currentAssistantDelta, who: 'assistant' });
+            currentAssistantMessageIndex = this.messages.length - 1;
+          } else {
+            // обновляем существующее сообщение ассистента
+            this.messages[currentAssistantMessageIndex].text = currentAssistantDelta;
+          }
+        }
+
+        if (msg.type === 'response.audio_transcript.done') {
+          currentAssistantDelta = '';
+          currentAssistantMessageIndex = null; // готовимся к следующему сообщению ассистента
+        }
+
         if (msg.type === 'response.created') {
           this.stopAllPlayback();
           this.lastResponseItemId = msg.response?.id ?? null;
         }
-        console.log(msg)
+
         if (msg.type === 'agent.response') {
           if (msg.payload.actions.some((action: any) => action.type === 'CALENDAR_CHECK'))
             this.triggerCalendarProcess();
@@ -192,11 +196,6 @@ export class VoiceAssistaint {
             this.triggerBookingProcess();
         }
 
-        if (
-          msg.type === 'response.content_part.done'
-        ) {
-          this.addMessage(msg.part.transcript, 'assistant');
-        }
       } catch {
         console.warn('Non JSON message');
       }
@@ -211,9 +210,6 @@ export class VoiceAssistaint {
     this.assistantService.bookingProcessing.set(true);
   }
 
-  // =========================
-  // Playback logic (без изменений)
-  // =========================
   private initPlaybackContext(): void {
     this.playbackContext ??= new AudioContext({ sampleRate: 24000 });
     if (this.playbackContext.state === 'suspended') {
@@ -273,9 +269,6 @@ export class VoiceAssistaint {
     source.onended = () => this.playNextChunk();
   }
 
-  // =========================
-  // Utils
-  // =========================
   private floatTo16BitPCM(input: Float32Array, rate: number): ArrayBuffer {
     let data = input;
 
