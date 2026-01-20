@@ -20,40 +20,8 @@
         recall reminders, and call automation.
       </p>
 
-      <div class="hero-actions">
-        <button class="btn primary" (click)="runBooking()">Run Booking Scenario</button>
-        <button class="btn secondary" (click)="runRecall()">Run Recall Scenario</button>
-        <button class="btn ghost" (click)="runCall()">Run Call Handling Scenario</button>
-      </div>
-
-      <button class="btn ghost small" (click)="pause()">Pause</button>
     </div>
 
-    <div class="hero-visual">
-      <div class="integration-map">
-        <div class="node node-ai">
-          <span>AI Booking Agent</span>
-        </div>
-        <div class="node node-filemaker">
-          <span>Filemaker 19</span>
-        </div>
-        <div class="node node-calendar">
-          <span>Google Calendar</span>
-        </div>
-        <div class="node node-doctor">
-          <span>Doctor Anytime</span>
-        </div>
-        <div class="node node-channels">
-          <span>Phone / WhatsApp / SMS</span>
-        </div>
-        <svg class="integration-lines" viewBox="0 0 300 200" preserveAspectRatio="none">
-          <line x1="150" y1="40" x2="60" y2="110" />
-          <line x1="150" y1="40" x2="240" y2="110" />
-          <line x1="150" y1="40" x2="150" y2="180" />
-          <line x1="150" y1="40" x2="60" y2="180" />
-        </svg>
-      </div>
-    </div>
   </section>
 
   <!-- CHAT -->
@@ -72,12 +40,6 @@
 <!--          </div>-->
 <!--        }-->
       </div>
-
-      <div class="chat-controls">
-        <button class="btn small" (click)="newBookingMessage()">New Booking</button>
-        <button class="btn small" (click)="newRecallMessage()">Recall Reminder</button>
-        <button class="btn small ghost" (click)="resetChat()">Reset</button>
-      </div>
     </div>
 
     <!-- SYSTEM ACTIVITY -->
@@ -85,16 +47,18 @@
       <h2>System Activity Monitor</h2>
 
       <div class="systems-grid">
-        @for (system of systems; track system.title) {
+        @for (system of assistantService.systems; track system.title) {
           <div
             class="system-card"
             [class.active]="system.active"
           >
-            <h3>{{ system.title }}</h3>
-            <p>{{ system.description }}</p>
-            <span class="status">
-            {{ system.active ? 'Active' : 'Idle' }}
-          </span>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <h3>{{ system.title }}</h3>
+              <p>{{ system.description }}</p>
+            </div>
+            <p class="status">
+            {{ system.active ? 'Active ...' : 'Idle' }}
+          </p>
           </div>
         }
       </div>

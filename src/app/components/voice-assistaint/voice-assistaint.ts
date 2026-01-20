@@ -1,4 +1,5 @@
-import {Component, ElementRef, ViewChild} from '@angular/core';
+import {Component, ElementRef, inject, ViewChild} from '@angular/core';
+import {AssistantService} from '../../core/services/assistant.service';
 
 type MessageWho = 'assistant' | 'user';
 
@@ -15,6 +16,7 @@ interface ChatMessage {
 })
 export class VoiceAssistaint {
   @ViewChild('player', { static: true }) player!: ElementRef<HTMLAudioElement>;
+  private assistantService = inject(AssistantService);
 
   // =========================
   // UI state
@@ -85,7 +87,7 @@ export class VoiceAssistaint {
     if (mode === 'local') return this.LOCAL_WS_URL;
     if (mode === 'remote') return this.REMOTE_WS_URL;
     console.log(location.hostname)
-    return /*location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? this.LOCAL_WS_URL : */this.REMOTE_WS_URL;
+    return /*location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? this.LOCAL_WS_URL : */this.LOCAL_WS_URL;
   }
 
   private resolveSessionId(): string {
@@ -178,26 +180,35 @@ export class VoiceAssistaint {
 
       try {
         const msg = JSON.parse(e.data);
-
         if (msg.type === 'response.created') {
           this.stopAllPlayback();
           this.lastResponseItemId = msg.response?.id ?? null;
         }
-
-        if (msg.type === 'assistant.text' && msg.text) {
-          this.addMessage(msg.text, 'assistant');
+        console.log(msg)
+        if (msg.type === 'agent.response') {
+          if (msg.payload.actions.some((action: any) => action.type === 'CALENDAR_CHECK'))
+            this.triggerCalendarProcess();
+          if (msg.payload.actions.some((action: any) => action.type === 'CALENDAR_BOOK'))
+            this.triggerBookingProcess();
         }
 
         if (
-          msg.type === 'response.output_text.done' &&
-          msg.output?.[0]?.content?.[0]?.text
+          msg.type === 'response.content_part.done'
         ) {
-          this.addMessage(msg.output[0].content[0].text, 'assistant');
+          this.addMessage(msg.part.transcript, 'assistant');
         }
       } catch {
         console.warn('Non JSON message');
       }
     };
+  }
+
+  triggerCalendarProcess(): void {
+    this.assistantService.calendarProcessing.set(true);
+  }
+
+  triggerBookingProcess(): void {
+    this.assistantService.bookingProcessing.set(true);
   }
 
   // =========================
