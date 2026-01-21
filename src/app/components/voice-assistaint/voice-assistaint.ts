@@ -1,6 +1,7 @@
-import {Component, ElementRef, inject, ViewChild} from '@angular/core';
+import {Component, ElementRef, inject, OnDestroy, OnInit, ViewChild} from '@angular/core';
 import {AssistantService} from '../../core/services/assistant.service';
-
+import { Observable, from, defer, Subject } from 'rxjs';
+import { switchMap, tap, takeUntil, shareReplay } from 'rxjs/operators';
 type MessageWho = 'assistant' | 'user';
 
 interface ChatMessage {
@@ -14,10 +15,11 @@ interface ChatMessage {
   templateUrl: './voice-assistaint.html',
   styleUrl: './voice-assistaint.scss',
 })
-export class VoiceAssistaint {
+export class VoiceAssistaint implements OnInit, OnDestroy{
   @ViewChild('player', { static: true }) player!: ElementRef<HTMLAudioElement>;
   private assistantService = inject(AssistantService);
-
+  private destroy$ = new Subject<void>();
+  private wsReady$?: Observable<void>;
   showEmptyState = true;
   isRecording = false;
   messages: ChatMessage[] = [];
@@ -45,29 +47,27 @@ export class VoiceAssistaint {
   private streamingServerUrl!: string;
 
   ngOnInit(): void {
-    this.sessionId = this.resolveSessionId();
-    this.streamingServerUrl = this.resolveWsUrl();
-    console.log('WS URL:', this.streamingServerUrl);
+    this.initAssistant();
   }
 
-  ngOnDestroy(): void {
-    this.stopRecording();
-    this.stopAllPlayback();
-    this.ws?.close();
+  private getUserMedia$(): Observable<MediaStream> {
+    return from(
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
+    );
+  }
+
+  initAssistant(): void {
+    this.sessionId = this.resolveSessionId();
+    this.streamingServerUrl = this.resolveWsUrl();
   }
 
   private resolveWsUrl(): string {
-    const params = new URLSearchParams(window.location.search);
-    const urlOverride = params.get('ws');
-    const modeOverride = params.get('backend');
-    const savedMode = localStorage.getItem('backendMode');
-
-    if (urlOverride) return urlOverride;
-
-    const mode = modeOverride || savedMode;
-    if (mode === 'local') return this.LOCAL_WS_URL;
-    if (mode === 'remote') return this.REMOTE_WS_URL;
-    console.log(location.hostname)
     return location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? this.LOCAL_WS_URL :  this.REMOTE_WS_URL;
   }
 
@@ -80,12 +80,7 @@ export class VoiceAssistaint {
     return id;
   }
 
-  private addMessage(text: string, who: MessageWho): void {
-    this.showEmptyState = false;
-    this.messages.push({ text, who });
-  }
-
-  async toggleRecording(): Promise<void> {
+  toggleRecording(): void {
     this.initPlaybackContext();
 
     if (this.isRecording) {
@@ -93,81 +88,61 @@ export class VoiceAssistaint {
       return;
     }
 
-    // Ждем открытия WebSocket перед началом записи
-    await this.ensureWebSocket();
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+    this.ensureWebSocket$()
+      .pipe(
+        switchMap(() => this.getUserMedia$()),
+        takeUntil(this.destroy$)
+      )
+      .subscribe({
+        next: stream => {
+          this.startRecording(stream)
+        },
+        error: err => {
+          console.error(err);
+          this.addMessage('❌ Ошибка доступа к микрофону', 'assistant');
         }
       });
+  }
 
-      this.micStream = stream;
+  private startRecording(stream: MediaStream): void {
+    this.micStream = stream;
+    this.audioContext ??= new AudioContext();
 
-      this.audioContext ??= new AudioContext();
-      // console.log(`[AUDIO CONTEXT] Sample Rate: ${this.audioContext.sampleRate}Hz`);
+    const ws = this.ws; // 🔒 фиксируем ссылку
+    if (!ws) return;
 
-      const source = this.audioContext.createMediaStreamSource(stream);
-      const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    const source = this.audioContext.createMediaStreamSource(stream);
+    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
-      processor.onaudioprocess = e => {
-        if (!this.isRecording || this.ws.readyState !== WebSocket.OPEN) return;
+    processor.onaudioprocess = e => {
+      if (!this.isRecording) return;
+      if (ws.readyState !== WebSocket.OPEN) return;
 
-        const input = e.inputBuffer.getChannelData(0);
+      const input = e.inputBuffer.getChannelData(0);
 
-        // Вычисляем уровень аудио
-        let sum = 0;
-        let peak = 0;
-        for (let i = 0; i < input.length; i++) {
-          const abs = Math.abs(input[i]);
-          sum += abs;
-          if (abs > peak) peak = abs;
-        }
-        const avg = sum / input.length;
+      let sum = 0;
+      for (const v of input) sum += Math.abs(v);
+      if (sum / input.length < 0.005) return;
 
-        // Логируем уровень аудио каждые 10 чанков
-        this.audioLevelCheckCounter++;
-        // if (this.audioLevelCheckCounter % 10 === 0) {
-        //   console.log(`[AUDIO LEVEL] Peak: ${(peak * 100).toFixed(2)}%, Avg: ${(avg * 100).toFixed(2)}%`);
-        // }
+      const pcm = this.floatTo16BitPCM(input, this.audioContext!.sampleRate);
 
-        // Порог тишины (0.5% среднего уровня)
-        const silenceThreshold = 0.005;
+      ws.send(JSON.stringify({
+        type: 'input_audio_buffer.append',
+        audio: this.arrayBufferToBase64(pcm)
+      }));
+    };
 
-        if (avg < silenceThreshold) {
-          // if (this.audioLevelCheckCounter % 10 === 0) {
-          //   console.log(`[AUDIO SKIP] Silence detected, skipping chunk`);
-          // }
-          return;
-        }
+    source.connect(processor);
+    processor.connect(this.audioContext.destination);
 
-        const pcm = this.floatTo16BitPCM(input, this.audioContext!.sampleRate);
-        const base64Audio = this.arrayBufferToBase64(pcm);
+    this.audioSource = source;
+    this.audioProcessor = processor;
+    this.isRecording = true;
+  }
 
-        // if (this.audioLevelCheckCounter % 10 === 0) {
-        //   console.log(`[AUDIO SEND] PCM bytes: ${pcm.byteLength}, Base64 length: ${base64Audio.length}`);
-        // }
-
-        this.ws.send(JSON.stringify({
-          type: 'input_audio_buffer.append',
-          audio: base64Audio
-        }));
-      };
-
-      source.connect(processor);
-      processor.connect(this.audioContext.destination);
-
-      this.audioSource = source;
-      this.audioProcessor = processor;
-      this.isRecording = true;
-
-    } catch (err) {
-      console.error(err);
-      this.addMessage('❌ Ошибка доступа к микрофону', 'assistant');
-    }
+  private addMessage(text: string, who: MessageWho): void {
+    this.showEmptyState = false;
+    this.messages.push({ text, who });
   }
 
   private stopRecording(): void {
@@ -179,84 +154,100 @@ export class VoiceAssistaint {
     this.micStream?.getTracks().forEach(t => t.stop());
   }
 
-  private ensureWebSocket(): Promise<void> {
+  private ensureWebSocket$(): Observable<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      return Promise.resolve();
+      return defer(() => new Observable<void>(o => {
+        o.next();
+        o.complete();
+      }));
     }
 
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.streamingServerUrl);
-      this.ws.binaryType = 'arraybuffer';
+    if (!this.wsReady$) {
+      this.wsReady$ = new Observable<void>(observer => {
+        this.ws = new WebSocket(this.streamingServerUrl);
+        this.ws.binaryType = 'arraybuffer';
 
-      this.ws.onopen = () => {
-        console.log('[WebSocket] Соединение открыто');
-        resolve();
-      };
+        let currentAssistantDelta = '';
+        let currentAssistantMessageIndex: number | null = null;
 
-      this.ws.onerror = (error) => {
-        console.error('[WebSocket] Ошибка соединения:', error);
-        reject(error);
-      };
+        this.ws.onopen = () => {
+          console.log('[WebSocket] connected');
+          observer.next();
+          observer.complete();
+        };
 
-      // Накопление текущего ответа ассистента
-      let currentAssistantDelta = '';
-      // Флаг, чтобы знать, создавали ли мы уже сообщение для текущего ответа
-      let currentAssistantMessageIndex: number | null = null;
+        this.ws.onerror = err => observer.error(err);
 
-      this.ws.onmessage = e => {
-      if (e.data instanceof ArrayBuffer) {
-        this.enqueueAudioChunk(e.data);
-        return;
-      }
-
-      try {
-        const msg = JSON.parse(e.data);
-
-        if (msg.type === 'agent.step') {
-          const systemIndex = this.assistantService.systems.findIndex(system => system.key === msg.key);
-          this.assistantService.systems[systemIndex] = {
-            ...this.assistantService.systems[systemIndex],
-            active: true,
-            status: msg.step,
+        this.ws.onmessage = e => {
+          if (e.data instanceof ArrayBuffer) {
+            this.enqueueAudioChunk(e.data);
+            return;
           }
-        }
 
-        if (msg.type === 'response.audio_transcript.delta') {
-          this.showEmptyState = false;
-          currentAssistantDelta += msg.delta;
+          try {
+            const msg = JSON.parse(e.data);
 
-          if (currentAssistantMessageIndex === null) {
-            // создаём новое сообщение ассистента и сохраняем индекс
-            this.messages.push({ text: currentAssistantDelta, who: 'assistant' });
-            currentAssistantMessageIndex = this.messages.length - 1;
-          } else {
-            // обновляем существующее сообщение ассистента
-            this.messages[currentAssistantMessageIndex].text = currentAssistantDelta;
+            if (msg.type === 'agent.step') {
+              const i = this.assistantService.systems
+                .findIndex(s => s.key === msg.key);
+
+              if (i !== -1) {
+                this.assistantService.systems[i] = {
+                  ...this.assistantService.systems[i],
+                  active: true,
+                  status: msg.step
+                };
+              }
+            }
+
+            if (msg.type === 'response.audio_transcript.delta') {
+              this.showEmptyState = false;
+              currentAssistantDelta += msg.delta;
+
+              if (currentAssistantMessageIndex === null) {
+                this.messages.push({ text: currentAssistantDelta, who: 'assistant' });
+                currentAssistantMessageIndex = this.messages.length - 1;
+              } else {
+                this.messages[currentAssistantMessageIndex].text = currentAssistantDelta;
+              }
+            }
+
+            if (msg.type === 'response.audio_transcript.done') {
+              currentAssistantDelta = '';
+              currentAssistantMessageIndex = null;
+            }
+
+            if (msg.type === 'response.created') {
+              this.stopAllPlayback();
+              this.lastResponseItemId = msg.response?.id ?? null;
+            }
+
+            if (msg.type === 'agent.response') {
+              console.log(msg.payload)
+              if (msg.payload.actions.some((a: any) => a.type === 'CALENDAR_CHECK')) {
+                this.triggerCalendarProcess();
+              }
+              if (msg.payload.actions.some((a: any) => a.type === 'CALENDAR_BOOK')) {
+                this.triggerBookingProcess();
+              }
+            }
+
+          } catch {
+            console.warn('[WebSocket] non json');
           }
-        }
+        };
 
-        if (msg.type === 'response.audio_transcript.done') {
-          currentAssistantDelta = '';
-          currentAssistantMessageIndex = null; // готовимся к следующему сообщению ассистента
-        }
+        return () => {
+          // this.ws?.close();
+          // this.ws = null!;
+          // this.wsReady$ = undefined;
+        };
+      }).pipe(
+        shareReplay(1)
+      );
+    }
 
-        if (msg.type === 'response.created') {
-          this.stopAllPlayback();
-          this.lastResponseItemId = msg.response?.id ?? null;
-        }
-
-        if (msg.type === 'agent.response') {
-          if (msg.payload.actions.some((action: any) => action.type === 'CALENDAR_CHECK'))
-            this.triggerCalendarProcess();
-          if (msg.payload.actions.some((action: any) => action.type === 'CALENDAR_BOOK'))
-            this.triggerBookingProcess();
-        }
-
-        } catch {
-          console.warn('Non JSON message');
-        }
-      };
-    });
+    return this.wsReady$;
   }
 
   triggerCalendarProcess(): void {
@@ -268,7 +259,7 @@ export class VoiceAssistaint {
   }
 
   private initPlaybackContext(): void {
-    this.playbackContext ??= new AudioContext({ sampleRate: 24000 });
+    this.playbackContext ??= new AudioContext({ sampleRate: 48000 });
     if (this.playbackContext.state === 'suspended') {
       this.playbackContext.resume();
     }
@@ -363,6 +354,14 @@ export class VoiceAssistaint {
     }
 
     return btoa(binary);
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.stopRecording();
+    this.stopAllPlayback();
+    this.ws?.close();
   }
 
 }
