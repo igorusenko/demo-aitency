@@ -30,6 +30,7 @@ export class VoiceAssistaint {
   private audioSource: MediaStreamAudioSourceNode | null = null;
   private audioProcessor: ScriptProcessorNode | null = null;
   private micStream: MediaStream | null = null;
+  private audioLevelCheckCounter = 0;
 
   private playbackContext: AudioContext | null = null;
   private audioQueue: ArrayBuffer[] = [];
@@ -104,14 +105,52 @@ export class VoiceAssistaint {
       this.micStream = stream;
 
       this.audioContext ??= new AudioContext();
+      // console.log(`[AUDIO CONTEXT] Sample Rate: ${this.audioContext.sampleRate}Hz`);
+      
       const source = this.audioContext.createMediaStreamSource(stream);
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
       processor.onaudioprocess = e => {
         if (!this.isRecording || this.ws.readyState !== WebSocket.OPEN) return;
         const input = e.inputBuffer.getChannelData(0);
+
+        // Вычисляем уровень аудио
+        let sum = 0;
+        let peak = 0;
+        for (let i = 0; i < input.length; i++) {
+          const abs = Math.abs(input[i]);
+          sum += abs;
+          if (abs > peak) peak = abs;
+        }
+        const avg = sum / input.length;
+
+        // Логируем уровень аудио каждые 10 чанков
+        this.audioLevelCheckCounter++;
+        // if (this.audioLevelCheckCounter % 10 === 0) {
+        //   console.log(`[AUDIO LEVEL] Peak: ${(peak * 100).toFixed(2)}%, Avg: ${(avg * 100).toFixed(2)}%`);
+        // }
+
+        // Порог тишины (0.5% среднего уровня)
+        const silenceThreshold = 0.005;
+        
+        if (avg < silenceThreshold) {
+          // if (this.audioLevelCheckCounter % 10 === 0) {
+          //   console.log(`[AUDIO SKIP] Silence detected, skipping chunk`);
+          // }
+          return;
+        }
+
         const pcm = this.floatTo16BitPCM(input, this.audioContext!.sampleRate);
-        this.ws.send(pcm);
+        const base64Audio = this.arrayBufferToBase64(pcm);
+        
+        // if (this.audioLevelCheckCounter % 10 === 0) {
+        //   console.log(`[AUDIO SEND] PCM bytes: ${pcm.byteLength}, Base64 length: ${base64Audio.length}`);
+        // }
+        
+        this.ws.send(JSON.stringify({
+          type: 'input_audio_buffer.append',
+          audio: base64Audio
+        }));
       };
 
       source.connect(processor);
@@ -289,6 +328,19 @@ export class VoiceAssistaint {
     });
 
     return buffer;
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    
+    return btoa(binary);
   }
 
 }
