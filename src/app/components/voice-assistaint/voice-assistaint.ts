@@ -66,7 +66,7 @@ export class VoiceAssistaint {
     if (mode === 'local') return this.LOCAL_WS_URL;
     if (mode === 'remote') return this.REMOTE_WS_URL;
     console.log(location.hostname)
-    return location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? this.LOCAL_WS_URL :  this.LOCAL_WS_URL;
+    return location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? this.LOCAL_WS_URL :  this.REMOTE_WS_URL;
   }
 
   private resolveSessionId(): string {
