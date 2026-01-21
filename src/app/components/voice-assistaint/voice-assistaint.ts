@@ -21,6 +21,7 @@ export class VoiceAssistaint {
   showEmptyState = true;
   isRecording = false;
   messages: ChatMessage[] = [];
+  isAssistantSpeaking = false;
 
   private readonly REMOTE_WS_URL = 'wss://voice-116.aitency.net/realtime';
   private readonly LOCAL_WS_URL = 'ws://localhost:3000/realtime';
@@ -85,13 +86,15 @@ export class VoiceAssistaint {
   }
 
   async toggleRecording(): Promise<void> {
-    this.ensureWebSocket();
     this.initPlaybackContext();
 
     if (this.isRecording) {
       this.stopRecording();
       return;
     }
+
+    // Ждем открытия WebSocket перед началом записи
+    await this.ensureWebSocket();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -106,12 +109,13 @@ export class VoiceAssistaint {
 
       this.audioContext ??= new AudioContext();
       // console.log(`[AUDIO CONTEXT] Sample Rate: ${this.audioContext.sampleRate}Hz`);
-      
+
       const source = this.audioContext.createMediaStreamSource(stream);
       const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
       processor.onaudioprocess = e => {
         if (!this.isRecording || this.ws.readyState !== WebSocket.OPEN) return;
+
         const input = e.inputBuffer.getChannelData(0);
 
         // Вычисляем уровень аудио
@@ -132,7 +136,7 @@ export class VoiceAssistaint {
 
         // Порог тишины (0.5% среднего уровня)
         const silenceThreshold = 0.005;
-        
+
         if (avg < silenceThreshold) {
           // if (this.audioLevelCheckCounter % 10 === 0) {
           //   console.log(`[AUDIO SKIP] Silence detected, skipping chunk`);
@@ -142,11 +146,11 @@ export class VoiceAssistaint {
 
         const pcm = this.floatTo16BitPCM(input, this.audioContext!.sampleRate);
         const base64Audio = this.arrayBufferToBase64(pcm);
-        
+
         // if (this.audioLevelCheckCounter % 10 === 0) {
         //   console.log(`[AUDIO SEND] PCM bytes: ${pcm.byteLength}, Base64 length: ${base64Audio.length}`);
         // }
-        
+
         this.ws.send(JSON.stringify({
           type: 'input_audio_buffer.append',
           audio: base64Audio
@@ -175,18 +179,31 @@ export class VoiceAssistaint {
     this.micStream?.getTracks().forEach(t => t.stop());
   }
 
-  private ensureWebSocket(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+  private ensureWebSocket(): Promise<void> {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
 
-    this.ws = new WebSocket(this.streamingServerUrl);
-    this.ws.binaryType = 'arraybuffer';
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.streamingServerUrl);
+      this.ws.binaryType = 'arraybuffer';
 
-    // Накопление текущего ответа ассистента
-    let currentAssistantDelta = '';
-    // Флаг, чтобы знать, создавали ли мы уже сообщение для текущего ответа
-    let currentAssistantMessageIndex: number | null = null;
+      this.ws.onopen = () => {
+        console.log('[WebSocket] Соединение открыто');
+        resolve();
+      };
 
-    this.ws.onmessage = e => {
+      this.ws.onerror = (error) => {
+        console.error('[WebSocket] Ошибка соединения:', error);
+        reject(error);
+      };
+
+      // Накопление текущего ответа ассистента
+      let currentAssistantDelta = '';
+      // Флаг, чтобы знать, создавали ли мы уже сообщение для текущего ответа
+      let currentAssistantMessageIndex: number | null = null;
+
+      this.ws.onmessage = e => {
       if (e.data instanceof ArrayBuffer) {
         this.enqueueAudioChunk(e.data);
         return;
@@ -235,10 +252,11 @@ export class VoiceAssistaint {
             this.triggerBookingProcess();
         }
 
-      } catch {
-        console.warn('Non JSON message');
-      }
-    };
+        } catch {
+          console.warn('Non JSON message');
+        }
+      };
+    });
   }
 
   triggerCalendarProcess(): void {
@@ -262,6 +280,7 @@ export class VoiceAssistaint {
     this.audioQueue = [];
     this.isPlaying = false;
     this.playbackTime = 0;
+    this.isAssistantSpeaking = false;
   }
 
   private enqueueAudioChunk(buffer: ArrayBuffer): void {
@@ -269,6 +288,7 @@ export class VoiceAssistaint {
 
     this.initPlaybackContext();
     this.audioQueue.push(buffer);
+    this.isAssistantSpeaking = true;
 
     if (!this.isPlaying) {
       this.playbackTime = this.playbackContext!.currentTime;
@@ -279,6 +299,8 @@ export class VoiceAssistaint {
   private playNextChunk(): void {
     if (!this.audioQueue.length) {
       this.isPlaying = false;
+      this.isAssistantSpeaking = false;
+      console.log('[PLAYBACK] Воспроизведение завершено, можно записывать');
       return;
     }
 
@@ -334,12 +356,12 @@ export class VoiceAssistaint {
     let binary = '';
     const bytes = new Uint8Array(buffer);
     const chunkSize = 0x8000;
-    
+
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.subarray(i, i + chunkSize);
       binary += String.fromCharCode.apply(null, Array.from(chunk));
     }
-    
+
     return btoa(binary);
   }
 
