@@ -222,16 +222,6 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
               this.lastResponseItemId = msg.response?.id ?? null;
             }
 
-            if (msg.type === 'agent.response') {
-              console.log(msg.payload)
-              if (msg.payload.actions.some((a: any) => a.type === 'CALENDAR_CHECK')) {
-                this.triggerCalendarProcess();
-              }
-              if (msg.payload.actions.some((a: any) => a.type === 'CALENDAR_BOOK')) {
-                this.triggerBookingProcess();
-              }
-            }
-
           } catch {
             console.warn('[WebSocket] non json');
           }
@@ -248,14 +238,6 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
     }
 
     return this.wsReady$;
-  }
-
-  triggerCalendarProcess(): void {
-    this.assistantService.calendarProcessing.set(true);
-  }
-
-  triggerBookingProcess(): void {
-    this.assistantService.bookingProcessing.set(true);
   }
 
   private initPlaybackContext(): void {
