@@ -6,6 +6,7 @@ import {effect, Injectable, signal, WritableSignal} from '@angular/core';
 export class AssistantService {
   calendarProcessing: WritableSignal<boolean> = signal(false);
   bookingProcessing: WritableSignal<boolean> = signal(false);
+  priceInquiryProcessing: WritableSignal<boolean> = signal(false);
 
   public systems = [
     {
@@ -29,6 +30,13 @@ export class AssistantService {
       active: false,
       status: 'Idle ...',
     },
+    {
+      title: 'Get prices',
+      description: 'provides prices for services.',
+      key: 'price_inquiry',
+      active: false,
+      status: 'Idle ...',
+    },
   ];
 
   constructor() {
@@ -38,6 +46,9 @@ export class AssistantService {
 
       const bookingIndex = this.systems.findIndex(system => system.key === 'booking')
       this.systems[bookingIndex].active = this.bookingProcessing();
+
+      const priceInquiryIndex = this.systems.findIndex(system => system.key === 'price_inquiry')
+      this.systems[priceInquiryIndex].active = this.priceInquiryProcessing();
     });
   }
 

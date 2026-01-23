@@ -1,7 +1,7 @@
 import {Component, ElementRef, inject, OnDestroy, OnInit, ViewChild} from '@angular/core';
 import {AssistantService} from '../../core/services/assistant.service';
 import { Observable, from, defer, Subject } from 'rxjs';
-import { switchMap, tap, takeUntil, shareReplay } from 'rxjs/operators';
+import { switchMap, takeUntil, shareReplay } from 'rxjs/operators';
 type MessageWho = 'assistant' | 'user';
 
 interface ChatMessage {
@@ -33,14 +33,11 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
   private audioSource: MediaStreamAudioSourceNode | null = null;
   private audioProcessor: ScriptProcessorNode | null = null;
   private micStream: MediaStream | null = null;
-  private audioLevelCheckCounter = 0;
-
   private playbackContext: AudioContext | null = null;
   private audioQueue: ArrayBuffer[] = [];
   private isPlaying = false;
   private playbackTime = 0;
   private currentAudioSources: AudioBufferSourceNode[] = [];
-  private playbackStartTime = 0;
   private lastResponseItemId: string | null = null;
 
   private sessionId!: string;
@@ -106,7 +103,7 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
 
   private startRecording(stream: MediaStream): void {
     this.micStream = stream;
-    this.audioContext ??= new AudioContext();
+    this.audioContext ??= new AudioContext({ sampleRate: 24000 });
 
     const ws = this.ws; // 🔒 фиксируем ссылку
     if (!ws) return;
@@ -241,7 +238,7 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
   }
 
   private initPlaybackContext(): void {
-    this.playbackContext ??= new AudioContext({ sampleRate: 48000 });
+    this.playbackContext ??= new AudioContext({ sampleRate: 24000 });
     if (this.playbackContext.state === 'suspended') {
       this.playbackContext.resume();
     }
@@ -257,7 +254,10 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
   }
 
   private enqueueAudioChunk(buffer: ArrayBuffer): void {
-    if (!buffer || buffer.byteLength < 100 || buffer.byteLength % 2 !== 0) return;
+    if (!buffer || buffer.byteLength < 100 || buffer.byteLength % 2 !== 0) {
+      console.warn('[AUDIO RECEIVE] Invalid chunk:', buffer?.byteLength);
+      return;
+    }
 
     this.initPlaybackContext();
     this.audioQueue.push(buffer);
@@ -307,9 +307,17 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
     let data = input;
 
     if (rate === 48000) {
-      const down = new Float32Array(input.length / 2);
-      for (let i = 0, j = 0; j < down.length; i += 2, j++) {
-        down[j] = input[i];
+      const targetRate = 24000;
+      const ratio = rate / targetRate;
+      const outputLength = Math.floor(input.length / ratio);
+      const down = new Float32Array(outputLength);
+
+      for (let i = 0; i < outputLength; i++) {
+        const srcIndex = i * ratio;
+        const srcIndexFloor = Math.floor(srcIndex);
+        const srcIndexCeil = Math.min(srcIndexFloor + 1, input.length - 1);
+        const t = srcIndex - srcIndexFloor;
+        down[i] = input[srcIndexFloor] * (1 - t) + input[srcIndexCeil] * t;
       }
       data = down;
     }
