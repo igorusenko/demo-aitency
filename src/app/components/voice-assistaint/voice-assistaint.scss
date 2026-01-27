@@ -15,15 +15,17 @@ body {
 }
 
 #chat {
+  background: radial-gradient(circle at top, #020617, #020617 52%, #000 100%);
+  border: 1px solid rgba(55,65,81,0.9);
+  border-radius: 22px;
   display: flex;
   flex-direction: column;
   flex: 1;
   height: 100%;
-  max-height: 364px;
+  max-height: 366px;
   overflow-y: auto;
   scroll-behavior: smooth;
   padding: 1rem;
-  padding-bottom: 0;
 }
 
 #chat::-webkit-scrollbar {
@@ -97,13 +99,12 @@ body {
 }
 
 .controls {
-  background: rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
   backdrop-filter: blur(20px);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .recordBtn {
@@ -118,13 +119,11 @@ body {
   font-size: 32px;
   margin: 8px;
   color: white;
-  box-shadow: 0 8px 24px rgba(255, 107, 107, 0.4);
   position: relative;
 }
 
 .recordBtn:hover:not(:disabled) {
   //transform: scale(1.05);
-  box-shadow: 0 12px 32px rgba(255, 107, 107, 0.5);
 }
 
 .recordBtn:active:not(:disabled) {
@@ -225,7 +224,6 @@ body {
   height: 100%;
   color: rgba(255, 255, 255, 0.7);
   text-align: center;
-  padding: 40px;
 }
 
 .empty-state-icon {
