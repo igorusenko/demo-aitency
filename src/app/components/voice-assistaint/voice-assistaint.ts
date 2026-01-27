@@ -17,6 +17,7 @@ interface ChatMessage {
 })
 export class VoiceAssistaint implements OnInit, OnDestroy{
   @ViewChild('player', { static: true }) player!: ElementRef<HTMLAudioElement>;
+  @ViewChild('bottom') bottom!: ElementRef;
   private assistantService = inject(AssistantService);
   private destroy$ = new Subject<void>();
   private wsReady$?: Observable<void>;
@@ -301,6 +302,7 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
     this.playbackTime = startAt + buffer.duration;
 
     source.onended = () => this.playNextChunk();
+    this.scrollToBottom();
   }
 
   private floatTo16BitPCM(input: Float32Array, rate: number): ArrayBuffer {
@@ -354,4 +356,10 @@ export class VoiceAssistaint implements OnInit, OnDestroy{
     this.ws?.close();
   }
 
+  scrollToBottom(smooth = true) {
+    this.bottom.nativeElement.scrollIntoView({
+      behavior: smooth ? 'smooth' : 'auto',
+      block: 'end'
+    });
+  }
 }

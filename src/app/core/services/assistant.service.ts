@@ -14,15 +14,15 @@ export class AssistantService {
 
   public systems = [
     {
-      title: 'Google Calendar',
+      title: 'Calendar',
       key: 'calendar',
       description: 'Appointment scheduling',
       active: false,
       status: 'Idle ...',
     },
     {
-      title: 'Doctor Anytime',
-      description: 'Online booking platform syncing appointments.',
+      title: 'CRM SYSTEM',
+      description: 'Client Information database.',
       key: 'booking',
       active: false,
       status: 'Idle ...',
@@ -35,14 +35,14 @@ export class AssistantService {
     //   status: 'Idle ...',
     // },
     {
-      title: 'Get prices',
+      title: 'Price List Data',
       description: 'provides prices for services.',
       key: 'price_inquiry',
       active: false,
       status: 'Idle ...',
     },
     {
-      title: 'Get list of services',
+      title: 'Services Database',
       description: 'provides list of services.',
       key: 'service_info',
       active: false,
@@ -63,9 +63,16 @@ export class AssistantService {
       status: 'Idle ...',
     },
     {
-      title: 'Handoff to human',
+      title: 'Transfer call to manager',
       description: 'hands off to a human.',
       key: 'handoff_to_human',
+      active: false,
+      status: 'Idle ...',
+    },
+    {
+      title: 'Other or Unknown',
+      description: 'Other - Unrelated inquiries.',
+      key: 'other',
       active: false,
       status: 'Idle ...',
     },
