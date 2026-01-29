@@ -1,12 +1,11 @@
 :host {
-& {
-  @apply flex flex-col h-full justify-between;
-}
+  & {
+    @apply flex flex-col h-full justify-between max-h-[484px];
+  }
 }
 #chat {
-  @apply flex flex-col flex-1 p-4 rounded-[22px] border overflow-y-auto scroll-smooth;
+  @apply flex flex-col flex-1 p-4 rounded-[22px] border overflow-y-auto scroll-smooth max-h-full min-h-0;
 
-  max-height: 366px;
   border-color: rgba(55, 65, 81, 0.9);
 
   background: radial-gradient(
