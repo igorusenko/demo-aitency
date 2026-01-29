@@ -79,7 +79,7 @@
   @apply relative flex items-center justify-center rounded-full cursor-pointer text-[32px] text-white m-2 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)];
   border: none;
 
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+  background: radial-gradient(circle at top, #020617, #020617 52%, #000 100%);
 }
 
 .recordBtn:active:not(:disabled) {
@@ -88,7 +88,6 @@
 
 .recordBtn.recording {
   background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
-  box-shadow: 0 8px 24px rgba(81, 207, 102, 0.4);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
